@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { C, uid, defaultSlot } from "./constants";
 import GlobalStyles from "./components/GlobalStyles";
 import Header from "./components/Header";
@@ -24,6 +24,34 @@ export default function App() {
     setNotice({ msg, kind });
     setTimeout(() => setNotice(null), 4200);
   };
+
+  /* ---------- cadence-editor bridge ----------
+     Cadence Editor runs on a different origin, so BroadcastChannel/localStorage
+     can't reach us. Instead it opens this app with the project metadata in the
+     URL hash (#clip-import=…); we read it on load and on hashchange (when the
+     editor re-sends to an already-open tab). */
+  useEffect(() => {
+    const importFromHash = () => {
+      const m = window.location.hash.match(/clip-import=([^&]+)/);
+      if (!m) return;
+      let data;
+      try {
+        data = JSON.parse(decodeURIComponent(m[1]));
+      } catch {
+        return; // malformed payload
+      }
+      // Clear the hash so a refresh doesn't re-import.
+      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+      const n = data.clips?.length ?? 0;
+      flash(`Cadence Editor sent "${data.projectName}" (${n} clip${n !== 1 ? "s" : ""}) — drop the video file to upload.`, "info");
+    };
+
+    // Initial load: defer so the toast's setState doesn't fire synchronously in
+    // the mount effect body. hashchange fires from a real event, so it's fine.
+    const initial = setTimeout(importFromHash, 0);
+    window.addEventListener("hashchange", importFromHash);
+    return () => { clearTimeout(initial); window.removeEventListener("hashchange", importFromHash); };
+  }, []);
 
   /* ---------- queue management ---------- */
   const addFiles = useCallback((fileList) => {
